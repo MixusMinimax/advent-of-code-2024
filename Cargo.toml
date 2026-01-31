@@ -11,6 +11,10 @@ path = "src/lib.rs"
 name = "d01"
 path = "d01/d01.rs"
 
+[[bin]]
+name = "d02"
+path = "d02/d02.rs"
+
 [dependencies]
 itertools = "0.14.0"
 
