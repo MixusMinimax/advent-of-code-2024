@@ -15,8 +15,14 @@ path = "d01/d01.rs"
 name = "d02"
 path = "d02/d02.rs"
 
+[[bin]]
+name = "d03"
+path = "d03/d03.rs"
+
 [dependencies]
 itertools = "0.14.0"
+regex = { version = "1.12.2", features = ["pattern"] }
+
 
 [profile.dev]
 opt-level = 0
