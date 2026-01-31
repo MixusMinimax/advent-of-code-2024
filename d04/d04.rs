@@ -68,10 +68,9 @@ fn part2(
     let mut total_count = 0;
     for y in 1..height - 1 {
         for x in 1..width - 1 {
-            if let (b'A', (b'M', b'S') | (b'S', b'M'), (b'M', b'S') | (b'S', b'M')) = (
-                data[y][x],
-                (data[y - 1][x - 1], data[y + 1][x + 1]),
-                (data[y - 1][x + 1], data[y + 1][x - 1]),
+            if let (b"MAS" | b"SAM", b"MAS" | b"SAM") = (
+                &[data[y - 1][x - 1], data[y][x], data[y + 1][x + 1]],
+                &[data[y - 1][x + 1], data[y][x], data[y + 1][x - 1]],
             ) {
                 total_count += 1
             }
