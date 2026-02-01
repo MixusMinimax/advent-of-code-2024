@@ -31,6 +31,10 @@ path = "d05/d05.rs"
 name = "d06"
 path = "d06/d06.rs"
 
+[[bin]]
+name = "d07"
+path = "d07/d07.rs"
+
 [dependencies]
 itertools = "0.14.0"
 regex = { version = "1.12.2", features = ["pattern"] }
