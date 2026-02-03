@@ -1,8 +1,5 @@
-use std::cell::OnceCell;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Write};
-use std::ops::{Index, IndexMut};
-use std::rc::Rc;
 use vecmath::vec2_add;
 
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
@@ -24,82 +21,53 @@ impl Display for Cell {
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
-struct Grid {
-    cells: Vec<Cell>,
-    size: [usize; 2],
+struct Field {
+    cells: aoc2016::grid::Grid<Cell>,
     pos: [isize; 2],
     heading: u8,
 }
 
-impl Display for Grid {
+impl Display for Field {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "pos: [{}, {}]", self.pos[0], self.pos[1])?;
-        for (i, cell) in self.cells.iter().enumerate() {
-            let x = (i % self.size[0]) as isize;
-            let y = (i / self.size[0]) as isize;
-            if x == 0 {
-                writeln!(f)?;
-            }
-            if [x, y] == self.pos {
-                match self.heading {
-                    0 => f.write_char('^')?,
-                    1 => f.write_char('>')?,
-                    2 => f.write_char('v')?,
-                    3 => f.write_char('<')?,
-                    _ => unreachable!(),
+        writeln!(f, "pos: [{}, {}]", self.pos[0], self.pos[1])?;
+        write!(
+            f,
+            "{}",
+            self.cells.display_pos(|pos, cell, f| {
+                if pos == self.pos {
+                    match self.heading {
+                        0 => f.write_char('^'),
+                        1 => f.write_char('>'),
+                        2 => f.write_char('v'),
+                        3 => f.write_char('<'),
+                        _ => unreachable!(),
+                    }
+                } else {
+                    write!(f, "{}", cell)
                 }
-            } else {
-                write!(f, "{}", cell)?;
-            }
-        }
-        Ok(())
+            })
+        )
     }
 }
 
-impl Grid {
+impl Field {
     fn from_lines<'s>(lines: impl IntoIterator<Item = &'s str>) -> Self {
-        let mut width = None;
-        let pos = Rc::<OnceCell<_>>::default();
-
-        let cells: Vec<_> = lines
-            .into_iter()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .enumerate()
-            .flat_map(|(y, line)| {
-                let l = line.len();
-                if let Some(width) = width {
-                    assert_eq!(width, l);
-                } else {
-                    width = Some(l);
-                }
-                let pos = pos.clone();
-                line.chars().enumerate().map(move |(x, c)| match c {
-                    '.' => Cell::Clear,
-                    '#' => Cell::Wall,
-                    '^' => {
-                        pos.set([x as isize, y as isize]).unwrap();
-                        Cell::Clear
-                    }
-                    _ => panic!("unexpected {c}"),
-                })
-            })
-            .collect();
-        let width = width.unwrap();
-        let height = cells.len() / width;
+        let mut pos = [0, 0];
+        let cells = aoc2016::grid::Grid::from_lines(lines, |p, c| match c {
+            '.' => Cell::Clear,
+            '#' => Cell::Wall,
+            '^' => {
+                pos = p;
+                Cell::Clear
+            }
+            _ => panic!("unexpected {c}"),
+        });
         Self {
             cells,
-            size: [width, height],
-            pos: Rc::into_inner(pos).unwrap().into_inner().unwrap(),
             heading: 0,
+            pos,
         }
     }
-}
-
-fn idx([x, y]: [isize; 2], [width, height]: [usize; 2]) -> usize {
-    assert!((0..width as isize).contains(&x));
-    assert!((0..height as isize).contains(&y));
-    y as usize * width + x as usize
 }
 
 fn dir_vec(heading: u8) -> [isize; 2] {
@@ -112,34 +80,14 @@ fn dir_vec(heading: u8) -> [isize; 2] {
     }
 }
 
-impl Index<[isize; 2]> for Grid {
-    type Output = Cell;
-
-    fn index(&self, index: [isize; 2]) -> &Self::Output {
-        let i = idx(index, self.size);
-        &self.cells[i]
-    }
-}
-
-impl IndexMut<[isize; 2]> for Grid {
-    fn index_mut(&mut self, index: [isize; 2]) -> &mut Self::Output {
-        let i = idx(index, self.size);
-        &mut self.cells[i]
-    }
-}
-
-impl Grid {
-    fn contains(&self, pos: [isize; 2]) -> bool {
-        (0..self.size[0] as isize).contains(&pos[0]) && (0..self.size[1] as isize).contains(&pos[1])
-    }
-
+impl Field {
     fn step(mut self) -> Self {
         let pos = self.pos;
-        self[pos] = Cell::Visited;
+        self.cells[pos] = Cell::Visited;
         for h in self.heading..self.heading + 4 {
             let h = h % 4;
             let next = vec2_add(pos, dir_vec(h));
-            if !self.contains(next) || self[next] != Cell::Wall {
+            if !self.cells.is_inside(next) || self.cells[next] != Cell::Wall {
                 self.heading = h;
                 self.pos = next;
                 return self;
@@ -149,25 +97,25 @@ impl Grid {
     }
 }
 
-fn causes_loop(mut grid: Grid) -> bool {
+fn causes_loop(mut field: Field) -> bool {
     let mut visited = HashSet::new();
-    while grid.contains(grid.pos) {
-        visited.insert((grid.pos, grid.heading));
-        grid = grid.step();
-        if visited.contains(&(grid.pos, grid.heading)) {
+    while field.cells.is_inside(field.pos) {
+        visited.insert((field.pos, field.heading));
+        field = field.step();
+        if visited.contains(&(field.pos, field.heading)) {
             return true;
         }
     }
     false
 }
 
-fn calc_obstructions(grid: &Grid) -> Vec<[isize; 2]> {
+fn calc_obstructions(field: &Field) -> Vec<[isize; 2]> {
     let mut obstructions = Vec::new();
-    for y in 0..grid.size[1] as isize {
-        for x in 0..grid.size[0] as isize {
-            if grid[[x, y]] == Cell::Visited && [x, y] != grid.pos {
-                let mut grid = grid.clone();
-                grid[[x, y]] = Cell::Wall;
+    for y in 0..field.cells.height() as isize {
+        for x in 0..field.cells.width() as isize {
+            if field.cells[[x, y]] == Cell::Visited && [x, y] != field.pos {
+                let mut grid = field.clone();
+                grid.cells[[x, y]] = Cell::Wall;
                 if causes_loop(grid) {
                     obstructions.push([x, y]);
                 }
@@ -177,32 +125,33 @@ fn calc_obstructions(grid: &Grid) -> Vec<[isize; 2]> {
     obstructions
 }
 
-fn part1(mut grid: Grid) -> Grid {
-    while grid.contains(grid.pos) {
-        grid = grid.step();
+fn part1(mut field: Field) -> Field {
+    while field.cells.is_inside(field.pos) {
+        field = field.step();
     }
     // println!("{grid}");
-    let visit_count = grid
+    let visit_count = field
+        .cells
         .cells
         .iter()
         .filter(|c| matches!(c, Cell::Visited))
         .count();
     println!("Part1: {visit_count}");
-    grid
+    field
 }
 
-fn part2(grid: &Grid) {
-    let obstacles = calc_obstructions(grid);
+fn part2(field: &Field) {
+    let obstacles = calc_obstructions(field);
     println!("Part2: {}", obstacles.len());
 }
 
 fn main() {
     // let input = include_str!("sample.txt");
     let input = include_str!("input.txt");
-    let grid = Grid::from_lines(input.lines());
+    let field = Field::from_lines(input.lines());
 
-    let pos = grid.pos;
-    let mut grid = part1(grid.clone());
+    let pos = field.pos;
+    let mut grid = part1(field.clone());
     grid.pos = pos;
     grid.heading = 0;
     part2(&grid);
@@ -214,7 +163,7 @@ mod tests {
 
     #[test]
     fn test_loop() {
-        let mut grid = Grid::from_lines(
+        let mut field = Field::from_lines(
             r##"
             .#....
             .....#
@@ -224,14 +173,14 @@ mod tests {
             "##
             .lines(),
         );
-        while grid.contains(grid.pos) {
-            grid = grid.step();
+        while field.cells.is_inside(field.pos) {
+            field = field.step();
         }
-        println!("{grid}");
-        grid.pos = [1, 3];
-        grid.heading = 0;
-        println!("\n{grid}");
-        let obs = calc_obstructions(&grid);
+        println!("{field}");
+        field.pos = [1, 3];
+        field.heading = 0;
+        println!("\n{field}");
+        let obs = calc_obstructions(&field);
         println!("{obs:?}");
     }
 }
