@@ -1,3 +1,4 @@
+use aoc2016::grid::Grid;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Write};
 use vecmath::vec2_add;
@@ -22,7 +23,7 @@ impl Display for Cell {
 
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
 struct Field {
-    cells: aoc2016::grid::Grid<Cell>,
+    cells: Grid<Cell>,
     pos: [isize; 2],
     heading: u8,
 }
@@ -53,7 +54,7 @@ impl Display for Field {
 impl Field {
     fn from_lines<'s>(lines: impl IntoIterator<Item = &'s str>) -> Self {
         let mut pos = [0, 0];
-        let cells = aoc2016::grid::Grid::from_lines(lines, |p, c| match c {
+        let cells = Grid::from_lines(lines, |p, c| match c {
             '.' => Cell::Clear,
             '#' => Cell::Wall,
             '^' => {
