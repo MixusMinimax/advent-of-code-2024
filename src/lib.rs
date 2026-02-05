@@ -2,6 +2,8 @@
 //! and is only used in single-run binary targets. Panics result in better backtraces and
 //! are easier to write with, since [Results](Result) or [Options](Option) have no benefits here.
 
+pub mod math;
+
 pub mod grid {
     use std::fmt::{Display, Formatter};
     use std::iter::once;
