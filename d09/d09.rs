@@ -1,6 +1,6 @@
 #![feature(assert_matches)]
 
-use std::assert_matches::assert_matches;
+use std::assert_matches;
 use std::fmt::{Display, Formatter, Write};
 use std::iter::repeat_n;
 

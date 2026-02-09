@@ -55,11 +55,17 @@ path = "d11/d11.rs"
 name = "d12"
 path = "d12/d12.rs"
 
+[[bin]]
+name = "d13"
+path = "d13/d13.rs"
+
 [dependencies]
+good_lp = { version = "1.14.2", default-features = false, features = ["scip"] }
 itertools = "0.14.0"
 num = "0.4.3"
 regex = { version = "1.12.2", features = ["pattern"] }
 vecmath = "1.0.0"
+lazy_static = "1.5.0"
 
 [profile.dev]
 opt-level = 0
