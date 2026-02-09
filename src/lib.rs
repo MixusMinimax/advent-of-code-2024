@@ -175,6 +175,34 @@ pub mod grid {
                 size: self.size,
             }
         }
+
+        pub fn positions(&self) -> impl Iterator<Item = Pos> {
+            struct PosIterator {
+                size: Size,
+                prev_pos: Pos,
+            }
+
+            impl Iterator for PosIterator {
+                type Item = Pos;
+
+                fn next(&mut self) -> Option<Self::Item> {
+                    self.prev_pos[0] += 1;
+                    if self.prev_pos[0] >= self.size[0] as isize {
+                        self.prev_pos[0] = 0;
+                        self.prev_pos[1] += 1;
+                        if self.prev_pos[1] >= self.size[1] as isize {
+                            return None;
+                        }
+                    }
+                    Some(self.prev_pos)
+                }
+            }
+
+            PosIterator {
+                size: self.size,
+                prev_pos: [-1, 0],
+            }
+        }
     }
 
     mod display {
@@ -253,6 +281,13 @@ pub mod grid {
             let g = Grid::from_lines(["1234", "5678", "9012"], |_, c| c);
             println!("{}", g.display(Display::fmt));
             println!("{}", g);
+        }
+
+        #[test]
+        fn test_positions() {
+            let g = Grid::<bool>::new([2, 3]);
+            let positions = g.positions().collect::<Vec<_>>();
+            assert_eq!(positions, [[0, 0], [1, 0], [0, 1], [1, 1], [0, 2], [1, 2]]);
         }
     }
 }
