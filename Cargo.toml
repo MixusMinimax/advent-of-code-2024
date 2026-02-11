@@ -64,6 +64,10 @@ required-features = ["good_lp"]
 name = "d14"
 path = "d14/d14.rs"
 
+[[bin]]
+name = "d15"
+path = "d15/d15.rs"
+
 [dependencies]
 good_lp = { version = "1.14.2", default-features = false, features = ["scip"], optional = true }
 itertools = "0.14.0"

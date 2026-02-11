@@ -5,6 +5,7 @@
 pub mod math;
 
 pub mod grid {
+    use std::convert::Infallible;
     use std::fmt::{Display, Formatter};
     use std::iter::once;
     use std::ops::{Deref, Index, IndexMut};
@@ -53,14 +54,22 @@ pub mod grid {
             Self { cells, size }
         }
 
+        #[inline(always)]
         pub fn from_lines<'s>(
             lines: impl IntoIterator<Item = &'s str>,
             mut create_cell: impl FnMut(Pos, char) -> Cell,
         ) -> Self {
+            Self::try_from_lines(lines, |p, c| Ok::<_, Infallible>(create_cell(p, c))).unwrap()
+        }
+
+        pub fn try_from_lines<'s, E>(
+            lines: impl IntoIterator<Item = &'s str>,
+            mut create_cell: impl FnMut(Pos, char) -> Result<Cell, E>,
+        ) -> Result<Self, E> {
             let mut it = lines.into_iter().map(str::trim).filter(|s| !s.is_empty());
             let first = it.next().unwrap();
             let width = first.len();
-            let data: Vec<_> = once(first)
+            let data: Result<Vec<_>, _> = once(first)
                 .chain(it.inspect(|l| debug_assert_eq!(l.len(), width)))
                 .enumerate()
                 .flat_map(|(y, l)| {
@@ -70,12 +79,13 @@ pub mod grid {
                 })
                 .map(|(p, c)| create_cell(p, c))
                 .collect();
+            let data = data?;
             let height = data.len() / width;
             debug_assert_eq!(width * height, data.len());
-            Self {
+            Ok(Self {
                 cells: data,
                 size: [width, height],
-            }
+            })
         }
     }
 
