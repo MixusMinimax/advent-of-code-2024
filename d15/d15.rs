@@ -132,10 +132,26 @@ impl Field {
     }
 }
 
+fn gps([x, y]: Pos) -> usize {
+    y as usize * 100 + x as usize
+}
+
+impl Field {
+    fn gps_sum(&self) -> usize {
+        self.grid
+            .iter_pos()
+            .map(|(p, c)| if let Cell::Box = c { gps(p) } else { 0 })
+            .sum()
+    }
+}
+
 fn main() {
-    let input = include_str!("sample.txt");
-    let Input(field, _) = input.parse().unwrap();
-    println!("{field}");
+    // let input = include_str!("sample.txt");
+    let input = include_str!("input.txt");
+    let Input(field, dirs) = input.parse().unwrap();
+    let field = dirs.into_iter().fold(field, Field::execute);
+    println!("{}", field);
+    println!("Gps sum: {}", field.gps_sum());
 }
 
 #[cfg(test)]
@@ -408,5 +424,6 @@ mod tests {
             #...O..#\n\
             ########",
         );
+        assert_eq!(f.gps_sum(), 2028);
     }
 }

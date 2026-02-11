@@ -8,6 +8,7 @@ pub mod grid {
     use std::convert::Infallible;
     use std::fmt::{Display, Formatter};
     use std::iter::once;
+    use std::marker::PhantomData;
     use std::ops::{Deref, Index, IndexMut};
 
     pub type Pos = [isize; 2];
@@ -106,10 +107,36 @@ pub mod grid {
         }
     }
 
+    struct PosIter<CellRef, SliceIter>(Size, usize, usize, SliceIter, PhantomData<CellRef>);
+
+    impl<CellRef, SliceIter> Iterator for PosIter<CellRef, SliceIter>
+    where
+        SliceIter: Iterator<Item = CellRef>,
+    {
+        type Item = (Pos, CellRef);
+        fn next(&mut self) -> Option<Self::Item> {
+            let i = self.1;
+            if i >= self.2 {
+                return None;
+            }
+            self.1 += 1;
+            let p = [(i % self.0[0]) as isize, (i / self.0[0]) as isize];
+            Some((p, self.3.next()?))
+        }
+    }
+
     impl<Cell> Grid<Cell> {
         pub fn rows(&self) -> impl Iterator<Item = &[Cell]> {
             let [width, height] = self.size;
             (0..height).map(move |y| &self.cells[y * width..(y + 1) * width])
+        }
+
+        pub fn iter_pos(&self) -> impl Iterator<Item = (Pos, &Cell)> {
+            PosIter(self.size, 0, self.len(), self.cells.iter(), PhantomData)
+        }
+
+        pub fn iter_pos_mut(&mut self) -> impl Iterator<Item = (Pos, &mut Cell)> {
+            PosIter(self.size, 0, self.len(), self.cells.iter_mut(), PhantomData)
         }
     }
 
@@ -124,14 +151,6 @@ pub mod grid {
 
         pub fn height(&self) -> usize {
             self.size[1]
-        }
-
-        pub fn len(&self) -> usize {
-            self.size[0] * self.size[1]
-        }
-
-        pub fn is_empty(&self) -> bool {
-            self.size[0] == 0 || self.size[1] == 0
         }
 
         pub fn swap(&mut self, a: Pos, b: Pos) {
@@ -304,6 +323,21 @@ pub mod grid {
             let g = Grid::<bool>::new([2, 3]);
             let positions = g.positions().collect::<Vec<_>>();
             assert_eq!(positions, [[0, 0], [1, 0], [0, 1], [1, 1], [0, 2], [1, 2]]);
+        }
+
+        #[test]
+        fn test_iter_pos() {
+            let g = Grid::<bool>::from([[false, true], [false, false]]);
+            let nodes: Vec<_> = g.iter_pos().collect();
+            assert_eq!(
+                nodes,
+                [
+                    ([0, 0], &false),
+                    ([1, 0], &true),
+                    ([0, 1], &false),
+                    ([1, 1], &false),
+                ],
+            );
         }
     }
 }
