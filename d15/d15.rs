@@ -7,6 +7,8 @@ use vecmath::vec2_add;
 enum Cell {
     Clear,
     Box,
+    BoxLeft,
+    BoxRight,
     Wall,
 }
 
@@ -32,6 +34,8 @@ impl Display for Cell {
         f.write_char(match self {
             Cell::Clear => '.',
             Cell::Box => 'O',
+            Cell::BoxLeft => '[',
+            Cell::BoxRight => ']',
             Cell::Wall => '#',
         })
     }
@@ -87,6 +91,8 @@ impl FromStr for Input {
                 Ok(match c {
                     '.' => Cell::Clear,
                     'O' => Cell::Box,
+                    '[' => Cell::BoxLeft,
+                    ']' => Cell::BoxRight,
                     '#' => Cell::Wall,
                     '@' => {
                         pos = Ok(p);
@@ -114,7 +120,7 @@ impl FromStr for Input {
 }
 
 impl Field {
-    fn execute(mut self, dir: Dir) -> Self {
+    fn execute_1(mut self, dir: Dir) -> Self {
         let v = dir.vec();
         let p = vec2_add(self.pos, v);
         let mut cur = p;
@@ -126,9 +132,63 @@ impl Field {
                 self.grid.swap(p, cur);
                 self.pos = p;
                 return self;
-            };
+            }
             cur = vec2_add(cur, v);
         }
+    }
+
+    fn expand(self) -> Self {
+        Self {
+            grid: Grid {
+                cells: self
+                    .grid
+                    .cells
+                    .into_iter()
+                    .flat_map(|c| match c {
+                        Cell::Clear => [Cell::Clear; 2],
+                        Cell::Box => [Cell::BoxLeft, Cell::BoxRight],
+                        Cell::BoxLeft => panic!("crime committed"),
+                        Cell::BoxRight => panic!("crime committed"),
+                        Cell::Wall => [Cell::Wall; 2],
+                    })
+                    .collect(),
+                size: [self.grid.size[0] * 2, self.grid.size[1]],
+            },
+            pos: [self.pos[0] * 2, self.pos[1]],
+        }
+    }
+
+    fn execute_2(mut self, dir: Dir) -> Self {
+        if let Dir::Left | Dir::Right = dir {
+            let off = self.pos[1] as usize * self.grid.size[0];
+            let step = if let Dir::Right = dir { 1 } else { -1 };
+            let x = self.pos[0];
+            let mut cur = x + step;
+            loop {
+                if !(0..self.grid.size[0] as isize).contains(&cur)
+                    || self.grid.cells[off + cur as usize] == Cell::Wall
+                {
+                    return self;
+                }
+                if self.grid.cells[off + cur as usize] == Cell::Clear {
+                    if let Dir::Right = dir {
+                        self.grid.cells[off + x as usize + 1..=off + cur as usize].rotate_right(1);
+                    } else {
+                        self.grid.cells[off + cur as usize..off + x as usize].rotate_left(1);
+                    }
+                    self.pos[0] += step;
+                    return self;
+                }
+                cur += step;
+            }
+        } else {
+            fn cascade(grid: &mut Grid<Cell>, pos: Pos, dir: Dir) {
+                _ = (grid, pos, dir);
+                todo!()
+            }
+            cascade(&mut self.grid, self.pos, dir);
+        }
+        self
     }
 }
 
@@ -140,18 +200,28 @@ impl Field {
     fn gps_sum(&self) -> usize {
         self.grid
             .iter_pos()
-            .map(|(p, c)| if let Cell::Box = c { gps(p) } else { 0 })
+            .map(|(p, c)| {
+                if let Cell::Box | Cell::BoxLeft = c {
+                    gps(p)
+                } else {
+                    0
+                }
+            })
             .sum()
     }
 }
 
 fn main() {
-    // let input = include_str!("sample.txt");
-    let input = include_str!("input.txt");
+    let input = include_str!("sample.txt");
+    // let input = include_str!("input.txt");
     let Input(field, dirs) = input.parse().unwrap();
-    let field = dirs.into_iter().fold(field, Field::execute);
+    let field_wide = field.clone().expand();
+    let field = dirs.iter().copied().fold(field, Field::execute_1);
     println!("{}", field);
     println!("Gps sum: {}", field.gps_sum());
+    println!("Part 2");
+    let field_wide = dirs.iter().copied().fold(field_wide, Field::execute_2);
+    println!("{}", field_wide);
 }
 
 #[cfg(test)]
@@ -202,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn test_execute() {
+    fn test_execute_1() {
         let Input(f, dirs) = r#"
             ########
             #..O.O.#
@@ -229,7 +299,7 @@ mod tests {
             #......#\n\
             ########",
         );
-        let f = f.execute(dir.next().unwrap());
+        let f = f.execute_1(dir.next().unwrap());
         assert_eq!(
             f.to_string(),
             "\
@@ -242,7 +312,7 @@ mod tests {
             #......#\n\
             ########",
         );
-        let f = f.execute(dir.next().unwrap());
+        let f = f.execute_1(dir.next().unwrap());
         assert_eq!(
             f.to_string(),
             "\
@@ -255,7 +325,7 @@ mod tests {
             #......#\n\
             ########",
         );
-        let f = f.execute(dir.next().unwrap());
+        let f = f.execute_1(dir.next().unwrap());
         assert_eq!(
             f.to_string(),
             "\
@@ -268,7 +338,7 @@ mod tests {
             #......#\n\
             ########",
         );
-        let f = f.execute(dir.next().unwrap());
+        let f = f.execute_1(dir.next().unwrap());
         assert_eq!(
             f.to_string(),
             "\
@@ -281,7 +351,7 @@ mod tests {
             #......#\n\
             ########",
         );
-        let f = f.execute(dir.next().unwrap());
+        let f = f.execute_1(dir.next().unwrap());
         assert_eq!(
             f.to_string(),
             "\
@@ -294,7 +364,7 @@ mod tests {
             #......#\n\
             ########",
         );
-        let f = f.execute(dir.next().unwrap());
+        let f = f.execute_1(dir.next().unwrap());
         assert_eq!(
             f.to_string(),
             "\
@@ -307,7 +377,7 @@ mod tests {
             #......#\n\
             ########",
         );
-        let f = f.execute(dir.next().unwrap());
+        let f = f.execute_1(dir.next().unwrap());
         assert_eq!(
             f.to_string(),
             "\
@@ -320,7 +390,7 @@ mod tests {
             #...O..#\n\
             ########",
         );
-        let f = f.execute(dir.next().unwrap());
+        let f = f.execute_1(dir.next().unwrap());
         assert_eq!(
             f.to_string(),
             "\
@@ -333,7 +403,7 @@ mod tests {
             #...O..#\n\
             ########",
         );
-        let f = f.execute(dir.next().unwrap());
+        let f = f.execute_1(dir.next().unwrap());
         assert_eq!(
             f.to_string(),
             "\
@@ -346,7 +416,7 @@ mod tests {
             #...O..#\n\
             ########",
         );
-        let f = f.execute(dir.next().unwrap());
+        let f = f.execute_1(dir.next().unwrap());
         assert_eq!(
             f.to_string(),
             "\
@@ -359,7 +429,7 @@ mod tests {
             #...O..#\n\
             ########",
         );
-        let f = f.execute(dir.next().unwrap());
+        let f = f.execute_1(dir.next().unwrap());
         assert_eq!(
             f.to_string(),
             "\
@@ -372,7 +442,7 @@ mod tests {
             #...O..#\n\
             ########",
         );
-        let f = f.execute(dir.next().unwrap());
+        let f = f.execute_1(dir.next().unwrap());
         assert_eq!(
             f.to_string(),
             "\
@@ -385,7 +455,7 @@ mod tests {
             #...O..#\n\
             ########",
         );
-        let f = f.execute(dir.next().unwrap());
+        let f = f.execute_1(dir.next().unwrap());
         assert_eq!(
             f.to_string(),
             "\
@@ -398,7 +468,7 @@ mod tests {
             #...O..#\n\
             ########",
         );
-        let f = f.execute(dir.next().unwrap());
+        let f = f.execute_1(dir.next().unwrap());
         assert_eq!(
             f.to_string(),
             "\
@@ -411,7 +481,7 @@ mod tests {
             #...O..#\n\
             ########",
         );
-        let f = f.execute(dir.next().unwrap());
+        let f = f.execute_1(dir.next().unwrap());
         assert_eq!(
             f.to_string(),
             "\
@@ -425,5 +495,26 @@ mod tests {
             ########",
         );
         assert_eq!(f.gps_sum(), 2028);
+    }
+
+    #[test]
+    fn test_execute_2_horizontal() {
+        let Input(f, dirs) = r#"
+            #############
+            #.[][]@[][].#
+            #############
+
+            <>><
+            "#
+        .parse()
+        .unwrap();
+        let f = dirs.into_iter().fold(f, Field::execute_2);
+        assert_eq!(
+            f.to_string(),
+            "\
+            #############\n\
+            #[][].@.[][]#\n\
+            #############",
+        );
     }
 }
