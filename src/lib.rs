@@ -133,6 +133,12 @@ pub mod grid {
         pub fn is_empty(&self) -> bool {
             self.size[0] == 0 || self.size[1] == 0
         }
+
+        pub fn swap(&mut self, a: Pos, b: Pos) {
+            let a = idx(a, self.size);
+            let b = idx(b, self.size);
+            self.cells.swap(a, b);
+        }
     }
 
     impl<Cell> Index<[isize; 2]> for Grid<Cell> {
