@@ -182,13 +182,40 @@ impl Field {
                 cur += step;
             }
         } else {
-            fn cascade(grid: &mut Grid<Cell>, pos: Pos, dir: Dir) {
-                _ = (grid, pos, dir);
-                todo!()
+            fn cascade(grid: &mut Grid<Cell>, mut pos: Pos, down: bool) -> bool {
+                assert_ne!(grid[pos], Cell::Box);
+                if !grid.is_inside(pos) || grid[pos] == Cell::Wall {
+                    return false;
+                }
+                if grid[pos] == Cell::Clear {
+                    return true;
+                }
+                if grid[pos] == Cell::BoxRight {
+                    pos[0] -= 1;
+                }
+                let [x, y] = pos;
+                assert!(grid.is_inside([x + 1, y]));
+                let dy = if down { 1 } else { -1 };
+                if !cascade(grid, [x, y + dy], down) || !cascade(grid, [x + 1, y + dy], down) {
+                    return false;
+                }
+                grid.swap([x, y], [x, y + dy]);
+                grid.swap([x + 1, y], [x + 1, y + dy]);
+                true
             }
-            cascade(&mut self.grid, self.pos, dir);
+            let backup = self.clone();
+            let dy = if dir == Dir::Down { 1 } else { -1 };
+            if cascade(
+                &mut self.grid,
+                [self.pos[0], self.pos[1] + dy],
+                dir == Dir::Down,
+            ) {
+                self.pos[1] += dy;
+                self
+            } else {
+                backup
+            }
         }
-        self
     }
 }
 
@@ -212,16 +239,18 @@ impl Field {
 }
 
 fn main() {
-    let input = include_str!("sample.txt");
-    // let input = include_str!("input.txt");
+    // let input = include_str!("sample.txt");
+    let input = include_str!("input.txt");
     let Input(field, dirs) = input.parse().unwrap();
     let field_wide = field.clone().expand();
     let field = dirs.iter().copied().fold(field, Field::execute_1);
     println!("{}", field);
     println!("Gps sum: {}", field.gps_sum());
+    println!();
     println!("Part 2");
     let field_wide = dirs.iter().copied().fold(field_wide, Field::execute_2);
     println!("{}", field_wide);
+    println!("Gps sum: {}", field_wide.gps_sum());
 }
 
 #[cfg(test)]
@@ -499,13 +528,13 @@ mod tests {
 
     #[test]
     fn test_execute_2_horizontal() {
-        let Input(f, dirs) = r#"
-            #############
-            #.[][]@[][].#
-            #############
+        let Input(f, dirs) = r"
+        #############
+        #.[][]@[][].#
+        #############
 
-            <>><
-            "#
+        <>><
+        "
         .parse()
         .unwrap();
         let f = dirs.into_iter().fold(f, Field::execute_2);
@@ -515,6 +544,143 @@ mod tests {
             #############\n\
             #[][].@.[][]#\n\
             #############",
+        );
+    }
+
+    #[test]
+    fn test_execute_2_vertical_up_ok() {
+        let Input(f, _) = r"
+        ######
+        #....#
+        #[][]#
+        #.[].#
+        #..@.#
+        ######
+        "
+        .parse()
+        .unwrap();
+        let f = f.execute_2(Dir::Up);
+        assert_eq!(
+            f.to_string(),
+            "\
+            ######\n\
+            #[][]#\n\
+            #.[].#\n\
+            #..@.#\n\
+            #....#\n\
+            ######",
+        );
+    }
+
+    #[test]
+    fn test_execute_2_vertical_down_ok() {
+        let Input(f, _) = r"
+        ######
+        #..@.#
+        #.[].#
+        #[][]#
+        #....#
+        ######
+        "
+        .parse()
+        .unwrap();
+        let f = f.execute_2(Dir::Down);
+        assert_eq!(
+            f.to_string(),
+            "\
+            ######\n\
+            #....#\n\
+            #..@.#\n\
+            #.[].#\n\
+            #[][]#\n\
+            ######",
+        );
+    }
+
+    #[test]
+    fn test_execute_2_vertical_blocked() {
+        let Input(f, _) = r"
+        ######
+        #..#.#
+        #[][]#
+        #.[].#
+        #..@.#
+        ######
+        "
+        .parse()
+        .unwrap();
+        let f = f.execute_2(Dir::Down);
+        assert_eq!(
+            f.to_string(),
+            "\
+            ######\n\
+            #..#.#\n\
+            #[][]#\n\
+            #.[].#\n\
+            #..@.#\n\
+            ######",
+        );
+    }
+
+    #[test]
+    fn test_execute_2_short_sample() {
+        let Input(f, dirs) = r"
+        #######
+        #...#.#
+        #.....#
+        #..OO@#
+        #..O..#
+        #.....#
+        #######
+
+        <vv<<^^<<^^
+        "
+        .parse()
+        .unwrap();
+        let f = f.expand();
+        assert_eq!(
+            f.to_string(),
+            "\
+            ##############\n\
+            ##......##..##\n\
+            ##..........##\n\
+            ##....[][]@.##\n\
+            ##....[]....##\n\
+            ##..........##\n\
+            ##############",
+        );
+        let f = dirs.into_iter().fold(f, Field::execute_2);
+        assert_eq!(
+            f.to_string(),
+            "\
+            ##############\n\
+            ##...[].##..##\n\
+            ##...@.[]...##\n\
+            ##....[]....##\n\
+            ##..........##\n\
+            ##..........##\n\
+            ##############",
+        );
+    }
+
+    #[test]
+    fn test_execute_2_big_sample() {
+        let Input(f, dirs) = include_str!("sample.txt").parse().unwrap();
+        let f = f.expand();
+        let f = dirs.into_iter().fold(f, Field::execute_2);
+        assert_eq!(
+            f.to_string(),
+            "\
+            ####################\n\
+            ##[].......[].[][]##\n\
+            ##[]...........[].##\n\
+            ##[]........[][][]##\n\
+            ##[]......[]....[]##\n\
+            ##..##......[]....##\n\
+            ##..[]............##\n\
+            ##..@......[].[][]##\n\
+            ##......[][]..[]..##\n\
+            ####################",
         );
     }
 }
