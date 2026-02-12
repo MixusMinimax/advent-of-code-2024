@@ -1,6 +1,10 @@
-use aoc2016::graph::{NoPathFound, a_star_rev};
+use aoc2016::graph::{NoPathFound, a_star_rev, bfs};
 use aoc2016::grid::{Grid, Pos};
+use itertools::Itertools;
+use rand::random;
+use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Write};
+use std::hash::{Hash, Hasher};
 use std::iter::once;
 use std::str::FromStr;
 use vecmath::{vec2_add, vec2_dot};
@@ -146,11 +150,55 @@ fn find_cheapest_path(field: &Field) -> Result<(Vec<Pos>, i64), NoPathFound> {
     ))
 }
 
+fn count_paths_with_score_at_most(field: &Field, max_score: i64) -> usize {
+    #[derive(Clone, Eq, PartialEq, Debug)]
+    struct Node(Pos, Dir, i64, HashSet<Pos>);
+    impl Hash for Node {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            random::<u64>().hash(state)
+        }
+    }
+    bfs(
+        Node(field.start, Dir::East, 0, HashSet::from([field.start])),
+        |&Node(p, _, _, _)| p == field.goal,
+        |&Node(p, dir, score, ref path)| {
+            [Dir::North, Dir::East, Dir::South, Dir::West]
+                .into_iter()
+                .filter_map(|n_dir| {
+                    if dir.abs_angle(&n_dir) == Angle::Half {
+                        return None;
+                    }
+                    let n_pos = vec2_add(p, n_dir.vec());
+                    if !field.grid.is_inside(n_pos) || field.grid[n_pos] == Cell::Wall {
+                        return None;
+                    }
+                    let score = score + dir.abs_angle(&n_dir).cost() + 1;
+                    if score > max_score {
+                        return None;
+                    }
+                    if path.contains(&n_pos) {
+                        return None;
+                    }
+                    let mut path = path.clone();
+                    path.insert(n_pos);
+                    let neighbor = Node(n_pos, n_dir, score, path);
+                    Some(neighbor)
+                })
+                .collect::<Vec<_>>()
+        },
+    )
+    .flat_map(|Node(_, _, _, p)| p)
+    .unique()
+    .count()
+}
+
 fn main() {
     let input = include_str!("input.txt");
     let f = input.parse().unwrap();
     let (p, c) = find_cheapest_path(&f).unwrap();
     println!("Part1: {} steps, score: {}", p.len() - 1, c);
+    let count = count_paths_with_score_at_most(&f, c);
+    println!("Part2: count: {}", count);
 }
 
 #[cfg(test)]
@@ -226,5 +274,7 @@ mod tests {
         let (p, c) = r.unwrap();
         assert_eq!(p.len(), 37);
         assert_eq!(c, 7036);
+        let count = count_paths_with_score_at_most(&f, c);
+        println!("Count: {}", count);
     }
 }

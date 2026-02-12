@@ -80,6 +80,7 @@ num = "0.4.3"
 regex = { version = "1.12.2", features = ["pattern"] }
 vecmath = "1.0.0"
 lazy_static = "1.5.0"
+rand = "0.10.0"
 
 [profile.dev]
 opt-level = 0

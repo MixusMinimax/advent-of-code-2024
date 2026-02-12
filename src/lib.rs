@@ -1,3 +1,4 @@
+#![feature(unboxed_closures)]
 //! We use panics in these functions instead of [Results](Result), because it is not a public library
 //! and is only used in single-run binary targets. Panics result in better backtraces and
 //! are easier to write with, since [Results](Result) or [Options](Option) have no benefits here.

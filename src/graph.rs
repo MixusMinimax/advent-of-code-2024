@@ -195,7 +195,7 @@ mod bfs_impl {
         start: Node,
         is_goal: IsGoal,
         get_neighbors: GetNeighbors,
-    ) -> impl IntoIterator<Item = Node> {
+    ) -> impl Iterator<Item = Node> {
         BfsIter::new(start, is_goal, get_neighbors)
     }
 }
