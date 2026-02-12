@@ -1,10 +1,7 @@
-use aoc2016::graph::{NoPathFound, a_star_rev, bfs};
+use aoc2016::graph::{NoPathFound, a_star_rev};
 use aoc2016::grid::{Grid, Pos};
-use itertools::Itertools;
-use rand::random;
-use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Write};
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::iter::once;
 use std::str::FromStr;
 use vecmath::{vec2_add, vec2_dot};
@@ -121,16 +118,31 @@ impl Angle {
     }
 }
 
-fn find_cheapest_path(field: &Field) -> Result<(Vec<Pos>, i64), NoPathFound> {
+fn find_cheapest_path(
+    &Field {
+        ref grid,
+        start,
+        goal,
+    }: &Field,
+) -> Result<(Vec<Pos>, i64), NoPathFound> {
+    find_cheapest_path_from(grid, start, Dir::East, goal)
+}
+
+fn find_cheapest_path_from(
+    grid: &Grid<Cell>,
+    start: Pos,
+    start_dir: Dir,
+    goal: Pos,
+) -> Result<(Vec<Pos>, i64), NoPathFound> {
     let (path, last) = a_star_rev(
-        &(field.start, Dir::East),
-        |&(p, _)| p == field.goal,
+        &(start, start_dir),
+        |&(p, _)| p == goal,
         |&(p, dir)| {
             [Dir::North, Dir::East, Dir::South, Dir::West]
                 .into_iter()
                 .filter_map(move |n_dir| {
                     let n_pos = vec2_add(p, n_dir.vec());
-                    if !field.grid.is_inside(n_pos) || field.grid[n_pos] == Cell::Wall {
+                    if !grid.is_inside(n_pos) || grid[n_pos] == Cell::Wall {
                         return None;
                     }
                     Some(((n_pos, n_dir), dir.abs_angle(&n_dir)))
@@ -151,45 +163,54 @@ fn find_cheapest_path(field: &Field) -> Result<(Vec<Pos>, i64), NoPathFound> {
 }
 
 fn count_paths_with_score_at_most(field: &Field, max_score: i64) -> usize {
-    #[derive(Clone, Eq, PartialEq, Debug)]
-    struct Node(Pos, Dir, i64, HashSet<Pos>);
-    impl Hash for Node {
-        fn hash<H: Hasher>(&self, state: &mut H) {
-            random::<u64>().hash(state)
+    let mut used = Grid::new(field.grid.size);
+    static mut DEBUG_COUNT: u64 = 0;
+    fn recurse(
+        grid: &Grid<Cell>,
+        used: &mut Grid<bool>,
+        pos: Pos,
+        dir: Dir,
+        goal: Pos,
+        cost: i64,
+        max_score: i64,
+    ) {
+        unsafe {
+            DEBUG_COUNT += 1;
+            let dc = DEBUG_COUNT;
+            println!("{}", dc);
+        }
+        used[pos] = true;
+        for next_dir in [Dir::North, Dir::East, Dir::South, Dir::West] {
+            let ang = dir.abs_angle(&next_dir);
+            if ang == Angle::Half {
+                continue;
+            }
+            let next_pos = vec2_add(pos, next_dir.vec());
+            if !grid.is_inside(next_pos) || grid[next_pos] == Cell::Wall {
+                continue;
+            }
+            let cost = cost + ang.cost() + 1;
+            if let Ok((_, c)) = find_cheapest_path_from(grid, next_pos, next_dir, goal)
+                && cost + c > max_score
+            {
+                continue;
+            }
+            recurse(grid, used, next_pos, next_dir, goal, cost, max_score);
         }
     }
-    bfs(
-        Node(field.start, Dir::East, 0, HashSet::from([field.start])),
-        |&Node(p, _, _, _)| p == field.goal,
-        |&Node(p, dir, score, ref path)| {
-            [Dir::North, Dir::East, Dir::South, Dir::West]
-                .into_iter()
-                .filter_map(|n_dir| {
-                    if dir.abs_angle(&n_dir) == Angle::Half {
-                        return None;
-                    }
-                    let n_pos = vec2_add(p, n_dir.vec());
-                    if !field.grid.is_inside(n_pos) || field.grid[n_pos] == Cell::Wall {
-                        return None;
-                    }
-                    let score = score + dir.abs_angle(&n_dir).cost() + 1;
-                    if score > max_score {
-                        return None;
-                    }
-                    if path.contains(&n_pos) {
-                        return None;
-                    }
-                    let mut path = path.clone();
-                    path.insert(n_pos);
-                    let neighbor = Node(n_pos, n_dir, score, path);
-                    Some(neighbor)
-                })
-                .collect::<Vec<_>>()
-        },
-    )
-    .flat_map(|Node(_, _, _, p)| p)
-    .unique()
-    .count()
+    unsafe {
+        DEBUG_COUNT = 0;
+    }
+    recurse(
+        &field.grid,
+        &mut used,
+        field.start,
+        Dir::East,
+        field.goal,
+        0,
+        max_score,
+    );
+    used.iter().filter(|b| **b).count()
 }
 
 fn main() {
@@ -275,6 +296,6 @@ mod tests {
         assert_eq!(p.len(), 37);
         assert_eq!(c, 7036);
         let count = count_paths_with_score_at_most(&f, c);
-        println!("Count: {}", count);
+        assert_eq!(count, 45);
     }
 }
