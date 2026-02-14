@@ -72,6 +72,10 @@ path = "d15/d15.rs"
 name = "d16"
 path = "d16/d16.rs"
 
+[[bin]]
+name = "d17"
+path = "d17/d17.rs"
+
 [dependencies]
 good_lp = { version = "1.14.2", default-features = false, features = ["scip"], optional = true }
 itertools = "0.14.0"
