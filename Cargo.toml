@@ -78,13 +78,13 @@ path = "d17/d17.rs"
 
 [dependencies]
 good_lp = { version = "1.14.2", default-features = false, features = ["scip"], optional = true }
+indicatif = "0.18.4"
 itertools = "0.14.0"
+lazy_static = "1.5.0"
 nom = "8.0.0"
 num = "0.4.3"
 regex = { version = "1.12.2", features = ["pattern"] }
 vecmath = "1.0.0"
-lazy_static = "1.5.0"
-rand = "0.10.0"
 
 [profile.dev]
 opt-level = 0

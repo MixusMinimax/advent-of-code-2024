@@ -193,14 +193,17 @@ pub mod grid {
     }
 
     impl<Cell> Grid<Cell> {
-        pub fn map<NewCell>(self, map_fn: impl Fn(Cell) -> NewCell) -> Grid<NewCell> {
+        pub fn map<NewCell>(self, map_fn: impl FnMut(Cell) -> NewCell) -> Grid<NewCell> {
             Grid {
                 cells: self.cells.into_iter().map(map_fn).collect(),
                 size: self.size,
             }
         }
 
-        pub fn map_pos<NewCell>(self, map_fn: impl Fn(Pos, Cell) -> NewCell) -> Grid<NewCell> {
+        pub fn map_pos<NewCell>(
+            self,
+            mut map_fn: impl FnMut(Pos, Cell) -> NewCell,
+        ) -> Grid<NewCell> {
             let width = self.width();
             Grid {
                 cells: self

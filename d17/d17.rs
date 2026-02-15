@@ -1,5 +1,9 @@
-use nom::IResult;
-use std::mem;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use itertools::Itertools;
+use num::Integer;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::{mem, thread};
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 #[repr(transparent)]
@@ -11,6 +15,7 @@ struct Lit(u8);
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 #[repr(u8)]
+#[allow(dead_code)]
 enum Ins {
     Adv(ComboOp) = 0,
     Bxl(Lit) = 1,
@@ -24,6 +29,7 @@ enum Ins {
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 #[repr(u8)]
+#[allow(dead_code)]
 enum ComboOp {
     L0 = 0,
     L1 = 1,
@@ -48,67 +54,225 @@ struct Cpu {
     a: i64,
     b: i64,
     c: i64,
-    program: Vec<Ins>,
-    pc: usize,
+    program: Vec<u8>,
+    pc: isize,
 }
 
-fn parse_cpu(s: &str) -> Result<Cpu, nom::Err<nom::error::Error<&str>>> {
-    use itertools::Itertools;
+fn parse_cpu(mut s: &str) -> Result<Cpu, nom::Err<nom::error::Error<&str>>> {
+    use nom::IResult;
     use nom::Parser;
     use nom::bytes::complete::tag;
-    use nom::character::complete::{char, i64, line_ending, space0, space1, u8};
+    use nom::character::complete::anychar;
+    use nom::character::complete::{char, i64, space0, u8};
     use nom::combinator::{eof, map_res};
-    use nom::multi::{many0, separated_list0};
-    use nom::sequence::{delimited, preceded};
+    use nom::multi::separated_list0;
+    use nom::sequence::preceded;
+    use nom::sequence::terminated;
     use std::result::Result::Err;
-    fn nl(s: &str) -> IResult<&str, &str> {
-        line_ending(s)
+
+    fn register(s: &str) -> IResult<&str, (char, i64)> {
+        preceded(
+            (tag("Register"), space0),
+            (terminated(anychar, (char(':'), space0)), i64),
+        )
+        .parse(s.trim_start())
     }
-    map_res(
+
+    let mut cpu = Cpu::default();
+
+    while let Ok((input, (c, v))) = register(s) {
+        match c {
+            'A' => cpu.a = v,
+            'B' => cpu.b = v,
+            'C' => cpu.c = v,
+            _ => {
+                return Err(nom::Err::Failure(nom::error::Error::new(
+                    s,
+                    nom::error::ErrorKind::Char,
+                )));
+            }
+        }
+        s = input;
+    }
+
+    cpu.program = map_res(
         (
-            delimited((space0, tag("Register A:"), space1), i64, (space0, nl)),
-            delimited((space0, tag("Register B:"), space1), i64, (space0, nl)),
-            delimited((space0, tag("Register C:"), space1), i64, (space0, nl)),
-            many0((space0, nl)),
             preceded(
-                (space0, tag("Program:")),
-                separated_list0(char(','), delimited(space0, u8, space0)),
+                (tag("Program:"), space0),
+                separated_list0((space0, char(','), space0), u8),
             ),
             eof,
         ),
-        |(a, b, c, _, program, _)| {
-            Ok::<_, nom::Err<nom::error::Error<&str>>>(Cpu {
-                a,
-                b,
-                c,
-                program: {
-                    program
-                        .into_iter()
-                        .map(|i| {
-                            if i < 8 {
-                                Ok(i)
-                            } else {
-                                Err(nom::Err::<nom::error::Error<&str>>::Error(
-                                    nom::error::Error::new(s, nom::error::ErrorKind::Digit),
-                                ))
-                            }
-                        })
-                        .tuples()
-                        .map(|(a, b)| a.and_then(|a| b.map(|b| Ins::from_bytes(a, b))))
-                        .collect::<Result<_, _>>()?
-                },
-                pc: 0,
-            })
+        |(program, _)| {
+            {
+                program
+                    .into_iter()
+                    .map(|i| {
+                        if i < 8 {
+                            Ok(i)
+                        } else {
+                            Err(nom::Err::<nom::error::Error<&str>>::Error(
+                                nom::error::Error::new(s, nom::error::ErrorKind::Digit),
+                            ))
+                        }
+                    })
+                    .collect::<Result<_, _>>()
+            }
         },
     )
-    .parse(s.trim())
-    .map(|(_, cpu)| cpu)
+    .parse(s.trim())?
+    .1;
+
+    Ok(cpu)
+}
+
+impl Cpu {
+    fn read(&self, op: ComboOp) -> i64 {
+        match op {
+            ComboOp::L0 => 0,
+            ComboOp::L1 => 1,
+            ComboOp::L2 => 2,
+            ComboOp::L3 => 3,
+            ComboOp::A => self.a,
+            ComboOp::B => self.b,
+            ComboOp::C => self.c,
+            ComboOp::Reserved => panic!("Reserved!"),
+        }
+    }
+
+    fn execute(mut self, mut output: impl FnMut(u8)) -> Self {
+        assert!(self.pc.is_even());
+        assert!(self.pc >= 0);
+        assert!((self.pc as usize) < self.program.len());
+        match Ins::from_bytes(
+            self.program[self.pc as usize],
+            self.program[self.pc as usize + 1],
+        ) {
+            Ins::Adv(op) => self.a >>= self.read(op),
+            Ins::Bxl(Lit(v)) => self.b ^= v as i64,
+            Ins::Bst(op) => self.b = self.read(op) & 0b111,
+            Ins::Jnz(Lit(v)) => {
+                if self.a != 0 {
+                    self.pc = v as _;
+                    return self;
+                }
+            }
+            Ins::Bxc(_) => self.b ^= self.c,
+            Ins::Out(op) => output(self.read(op).unsigned_abs() as u8 & 0b111),
+            Ins::Bdv(op) => self.b = self.a >> self.read(op),
+            Ins::Cdv(op) => self.c = self.a >> self.read(op),
+        }
+        self.pc += 2;
+        self
+    }
+
+    fn run(self) -> (Self, Vec<u8>) {
+        let mut output = vec![];
+        let mut cpu = self;
+        while (0..cpu.program.len() as isize).contains(&cpu.pc) {
+            cpu = cpu.execute(|i| output.push(i));
+        }
+        (cpu, output)
+    }
 }
 
 fn main() {
     let input = include_str!("input.txt");
     let cpu = parse_cpu(input).unwrap();
-    todo!()
+    let cpu2 = cpu.clone();
+    println!(
+        "{:?}",
+        cpu.program
+            .iter()
+            .copied()
+            .tuples()
+            .map(|(a, b)| Ins::from_bytes(a, b))
+            .collect::<Vec<_>>()
+    );
+    let (cpu, output) = cpu.run();
+    println!("A = {}", cpu.a);
+    println!("B = {}", cpu.b);
+    println!("C = {}", cpu.c);
+    println!("Output:");
+    let mut cont = false;
+    output.iter().for_each(|&i| {
+        if cont {
+            print!(",")
+        } else {
+            cont = true
+        }
+        print!("{}", i)
+    });
+    if cont {
+        println!()
+    }
+
+    let cpu = cpu2;
+
+    let best = Arc::new(AtomicI64::new(i64::MAX));
+
+    const THREADS: usize = 24;
+    const CHECK_INTERVAL: i64 = 100_000;
+    const PROGRESS_INTERVAL: u64 = 100_000;
+    const START: i64 = 70368744177664;
+    const END: i64 = 562949953421312;
+
+    let m = MultiProgress::new();
+
+    let mut handles = vec![];
+    for offset in 0..THREADS {
+        let best = best.clone();
+        let cpu = cpu.clone();
+
+        let pb = m.add(ProgressBar::new(END as u64 - START as u64));
+        pb.set_style(
+            ProgressStyle::with_template(&format!(
+                "Thread {:02} [{{elapsed_precise}}] {{bar:40.cyan/blue}} {{pos:>12}}/{{len}} {{per_sec}} | {{msg}}",
+                offset
+            ))
+            .unwrap(),
+        );
+
+        handles.push(thread::spawn(move || {
+            let mut cpu = cpu;
+            let mut i = START + offset as i64;
+            let mut local_progress: u64 = 0;
+            let mut next_check = CHECK_INTERVAL;
+            loop {
+                if i >= next_check {
+                    if i >= best.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    next_check = i + CHECK_INTERVAL;
+                }
+
+                cpu.a = i;
+                let (_, output) = cpu.clone().run();
+                if cpu.program == output {
+                    best.fetch_min(i, Ordering::Relaxed);
+                    pb.inc(local_progress);
+                    pb.set_message(format!("i={}, l={}", i, output.len()));
+                    break;
+                }
+
+                local_progress += 1;
+
+                if local_progress >= PROGRESS_INTERVAL {
+                    pb.inc(local_progress);
+                    pb.set_message(format!("i={}, l={}", i, output.len()));
+                    local_progress = 0;
+                }
+
+                i += THREADS as i64;
+            }
+        }));
+    }
+
+    for h in handles {
+        h.join().unwrap();
+    }
+
+    println!("A = {}", best.load(Ordering::Relaxed));
 }
 
 #[cfg(test)]
@@ -141,12 +305,119 @@ mod tests {
         assert_eq!(cpu.b, 0);
         assert_eq!(cpu.c, 0);
         assert_eq!(
-            cpu.program,
+            cpu.program
+                .into_iter()
+                .tuples()
+                .map(|(a, b)| Ins::from_bytes(a, b))
+                .collect::<Vec<_>>(),
             [
                 Ins::Adv(ComboOp::L1),
                 Ins::Out(ComboOp::A),
                 Ins::Jnz(Lit(0)),
             ],
         );
+    }
+
+    #[test]
+    fn test_adv() {
+        let cpu = parse_cpu(
+            r"
+            Register A: 9
+            Program: 0,2
+            ",
+        )
+        .unwrap();
+        let cpu = cpu.execute(|_| {});
+        assert_eq!(cpu.a, 9 / 4);
+    }
+
+    #[test]
+    fn test_run_1() {
+        let cpu = parse_cpu(
+            r"
+            Register C: 9
+            Program: 2,6
+            ",
+        )
+        .unwrap();
+        let (cpu, output) = cpu.run();
+        assert_eq!(
+            cpu,
+            Cpu {
+                a: 0,
+                b: 1,
+                c: 9,
+                program: vec![2, 6],
+                pc: 2,
+            }
+        );
+        assert_eq!(output, []);
+    }
+
+    #[test]
+    fn test_run_2() {
+        let cpu = parse_cpu(
+            r"
+            Register A: 10
+            Program: 5,0,5,1,5,4
+            ",
+        )
+        .unwrap();
+        let (_, output) = cpu.run();
+        assert_eq!(output, [0, 1, 2]);
+    }
+
+    #[test]
+    fn test_run_3() {
+        let cpu = parse_cpu(
+            r"
+            Register A: 2024
+            Program: 0,1,5,4,3,0
+            ",
+        )
+        .unwrap();
+        let (cpu, output) = cpu.run();
+        assert_eq!(cpu.a, 0);
+        assert_eq!(output, [4, 2, 5, 6, 7, 7, 7, 7, 3, 1, 0]);
+    }
+
+    #[test]
+    fn test_run_4() {
+        let cpu = parse_cpu(
+            r"
+            Register B: 29
+            Program: 1,7
+            ",
+        )
+        .unwrap();
+        let (cpu, _) = cpu.run();
+        assert_eq!(cpu.b, 26);
+    }
+
+    #[test]
+    fn test_run_5() {
+        let cpu = parse_cpu(
+            r"
+            Register B: 2024
+            Register C: 43690
+            Program: 4,0
+            ",
+        )
+        .unwrap();
+        let (cpu, _) = cpu.run();
+        assert_eq!(cpu.b, 44354);
+    }
+
+    #[test]
+    fn test_run_sample() {
+        let cpu = parse_cpu(
+            r"
+            Register A: 729
+            Program: 0,1,5,4,3,0
+            ",
+        )
+        .unwrap();
+        let (_, output) = cpu.run();
+        assert_eq!(output, [4, 6, 3, 5, 6, 3, 5, 2, 1, 0]);
     }
 }
