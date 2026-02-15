@@ -8,4 +8,8 @@ out b    ; print b
 jnz 0    ; if(a == 0) goto 0
 
 ; for 16 numbers, `a` must be at least $1 << (3*15 + 1)$
+; a from 0x400000000000
 ; 2,4,1,5,7,5,0,3,4,1,1,6,5,5,3,0
+
+; only 0x600000000000 to 0x800000000000 make it end in a 0.
+; so far, 0x602000000000 makes it end with 5,5,3,0

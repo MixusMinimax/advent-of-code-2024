@@ -176,6 +176,74 @@ impl Cpu {
     }
 }
 
+#[allow(dead_code)]
+fn part_2_brute_force(cpu: Cpu) {
+    let best = Arc::new(AtomicI64::new(i64::MAX));
+
+    const THREADS: usize = 24;
+    const CHECK_INTERVAL: i64 = 100_000;
+    const PROGRESS_INTERVAL: u64 = 100_000;
+    const START: i64 = 0x6020_0000_0000;
+    const END: i64 = 0x8000_0000_0000;
+
+    let m = MultiProgress::new();
+
+    let mut handles = vec![];
+    for offset in 0..THREADS {
+        let best = best.clone();
+        let cpu = cpu.clone();
+
+        let pb = m.add(ProgressBar::new(END as u64 - START as u64));
+        pb.set_style(
+            ProgressStyle::with_template(&format!(
+                "Thread {:02} [{{elapsed_precise}}] {{bar:40.cyan/blue}} {{pos:>12}}/{{len}} {{per_sec}} | {{msg}}",
+                offset
+            ))
+                .unwrap()
+        );
+
+        handles.push(thread::spawn(move || {
+            let mut cpu = cpu;
+            let mut i = START + offset as i64;
+            let mut local_progress: u64 = 0;
+            let mut next_check = CHECK_INTERVAL;
+            loop {
+                if i >= next_check {
+                    if i >= best.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    next_check = i + CHECK_INTERVAL;
+                }
+
+                cpu.a = i;
+                let (_, output) = cpu.clone().run();
+                if cpu.program == output {
+                    best.fetch_min(i, Ordering::Relaxed);
+                    pb.inc(local_progress);
+                    pb.set_message(format!("i={:x}, l={}", i, output.len()));
+                    break;
+                }
+
+                local_progress += 1;
+
+                if local_progress >= PROGRESS_INTERVAL {
+                    pb.inc(local_progress);
+                    pb.set_message(format!("i={:x}, l={}", i, output.len()));
+                    local_progress = 0;
+                }
+
+                i += THREADS as i64;
+            }
+        }));
+    }
+
+    for h in handles {
+        h.join().unwrap();
+    }
+
+    println!("A = {}", best.load(Ordering::Relaxed));
+}
+
 fn main() {
     let input = include_str!("input.txt");
     let cpu = parse_cpu(input).unwrap();
@@ -207,72 +275,19 @@ fn main() {
         println!()
     }
 
-    let cpu = cpu2;
-
-    let best = Arc::new(AtomicI64::new(i64::MAX));
-
-    const THREADS: usize = 24;
-    const CHECK_INTERVAL: i64 = 100_000;
-    const PROGRESS_INTERVAL: u64 = 100_000;
-    const START: i64 = 70368744177664;
-    const END: i64 = 562949953421312;
-
-    let m = MultiProgress::new();
-
-    let mut handles = vec![];
-    for offset in 0..THREADS {
-        let best = best.clone();
-        let cpu = cpu.clone();
-
-        let pb = m.add(ProgressBar::new(END as u64 - START as u64));
-        pb.set_style(
-            ProgressStyle::with_template(&format!(
-                "Thread {:02} [{{elapsed_precise}}] {{bar:40.cyan/blue}} {{pos:>12}}/{{len}} {{per_sec}} | {{msg}}",
-                offset
-            ))
-            .unwrap(),
-        );
-
-        handles.push(thread::spawn(move || {
-            let mut cpu = cpu;
-            let mut i = START + offset as i64;
-            let mut local_progress: u64 = 0;
-            let mut next_check = CHECK_INTERVAL;
-            loop {
-                if i >= next_check {
-                    if i >= best.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    next_check = i + CHECK_INTERVAL;
-                }
-
-                cpu.a = i;
-                let (_, output) = cpu.clone().run();
-                if cpu.program == output {
-                    best.fetch_min(i, Ordering::Relaxed);
-                    pb.inc(local_progress);
-                    pb.set_message(format!("i={}, l={}", i, output.len()));
-                    break;
-                }
-
-                local_progress += 1;
-
-                if local_progress >= PROGRESS_INTERVAL {
-                    pb.inc(local_progress);
-                    pb.set_message(format!("i={}, l={}", i, output.len()));
-                    local_progress = 0;
-                }
-
-                i += THREADS as i64;
-            }
-        }));
+    let mut cpu = cpu2;
+    // cpu.a = 70368744177664;
+    cpu.a = 0x602000000000;
+    cpu.a = 0x602000000000;
+    for _ in 0..100 {
+        let (_, output) = cpu.clone().run();
+        println!("A = {:x}", cpu.a);
+        println!("{:?}", output);
+        println!("{:?} | {:?}", cpu.program, output == cpu.program);
+        cpu.a += 1;
     }
 
-    for h in handles {
-        h.join().unwrap();
-    }
-
-    println!("A = {}", best.load(Ordering::Relaxed));
+    // part_2_brute_force(cpu);
 }
 
 #[cfg(test)]
