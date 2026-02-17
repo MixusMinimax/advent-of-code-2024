@@ -80,6 +80,10 @@ path = "d17/d17.rs"
 name = "d18"
 path = "d18/d18.rs"
 
+[[bin]]
+name = "d19"
+path = "d19/d19.rs"
+
 [dependencies]
 good_lp = { version = "1.14.2", default-features = false, features = ["scip"], optional = true }
 indicatif = "0.18.4"
